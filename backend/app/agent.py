@@ -1,8 +1,8 @@
 
 from .database import get_db
 from .pricing import extract_price, utc_now
-from .notifications import price_alert, send_slack_message
-from .config import DEMO_MODE
+from .notifications import send_slack_message
+from .config import DEMO_MODE, DATABASE_URL
 
 
 def get_product(product_id):
@@ -31,13 +31,18 @@ def add_product(url, target_price=None, title=None):
     now = utc_now()
 
     with get_db() as db:
-        cursor = db.execute(
-            """
+        insert_sql = """
             INSERT INTO products
                 (title, url, target_price, current_price, currency,
                  last_checked, last_error, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
+        """
+
+        if DATABASE_URL:
+            insert_sql += " RETURNING id"
+
+        cursor = db.execute(
+            insert_sql,
             (
                 title or details["title"],
                 url,
@@ -50,7 +55,10 @@ def add_product(url, target_price=None, title=None):
             ),
         )
 
-        product_id = cursor.lastrowid
+        if DATABASE_URL:
+            product_id = cursor.fetchone()["id"]
+        else:
+            product_id = cursor.lastrowid
 
         db.execute(
             """
@@ -63,7 +71,7 @@ def add_product(url, target_price=None, title=None):
 
     product = get_product(product_id)
 
-    # Slack failure must not undo a successfully saved product.
+    # Notification failures should not undo a saved product.
     try:
         current_price = product["current_price"]
         price_text = (
@@ -73,7 +81,9 @@ def add_product(url, target_price=None, title=None):
         )
         target = product["target_price"]
         target_text = (
-            f"₹{float(target):,.2f}" if target is not None else "Not set"
+            f"₹{float(target):,.2f}"
+            if target is not None
+            else "Not set"
         )
 
         message = (
@@ -103,7 +113,11 @@ def check_product(product_id):
         details = (
             {
                 "title": product["title"],
-                "price": product["current_price"] or 999.0,
+                "price": (
+                    product["current_price"]
+                    if product["current_price"] is not None
+                    else 999.0
+                ),
                 "currency": product["currency"],
                 "source": "demo",
             }
@@ -135,8 +149,6 @@ def check_product(product_id):
                 (product_id, new_price, now, details["source"]),
             )
 
-        # Only alert on the transition from above target to at/below target.
-        # The initial saved price is included in history.
         target_reached = (
             target_price is not None
             and new_price <= float(target_price)
@@ -148,7 +160,6 @@ def check_product(product_id):
 
         messages = []
 
-        # Keep the existing price-drop notification behavior.
         if old_price is not None and new_price < float(old_price):
             messages.append(
                 f"📉 Price drop for {product['title']}\n"
@@ -171,7 +182,9 @@ def check_product(product_id):
 
         if messages:
             try:
-                notification = send_slack_message("\n\n".join(messages))
+                notification = send_slack_message(
+                    "\n\n".join(messages)
+                )
             except Exception as exc:
                 notification = {
                     "sent": False,
