@@ -1,4 +1,3 @@
-
 import os
 from contextlib import asynccontextmanager
 
@@ -21,8 +20,10 @@ def scheduled_checks():
         try:
             agent.check_product(product["id"])
         except Exception as exc:
-            print(f"Scheduled check failed for product "
-                  f"{product['id']}: {exc}")
+            print(
+                f"Scheduled check failed for product "
+                f"{product['id']}: {exc}"
+            )
 
 
 @asynccontextmanager
@@ -53,6 +54,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
+# Local development origins
 allowed_origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
@@ -60,8 +63,11 @@ allowed_origins = [
     "http://127.0.0.1:5174",
 ]
 
-# Set CORS_ORIGINS in Render to your deployed frontend URL.
+# Add deployed frontend URL(s) in the Render environment variables.
+# Example:
+# CORS_ORIGINS=https://price-tracker-agent.vercel.app
 extra_origins = os.getenv("CORS_ORIGINS", "")
+
 allowed_origins.extend(
     origin.strip().rstrip("/")
     for origin in extra_origins.split(",")
@@ -99,7 +105,10 @@ def create_product(payload: ProductCreate):
             payload.title,
         )
     except Exception as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=422,
+            detail=str(exc),
+        ) from exc
 
 
 @app.post("/api/products/{product_id}/check")
@@ -107,9 +116,15 @@ def check_product(product_id: int):
     try:
         return agent.check_product(product_id)
     except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=404,
+            detail=str(exc),
+        ) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=502,
+            detail=str(exc),
+        ) from exc
 
 
 @app.get("/api/products/{product_id}/history")
@@ -119,12 +134,16 @@ def product_history(product_id: int):
             status_code=404,
             detail="Product not found.",
         )
+
     return agent.history(product_id)
 
 
 @app.patch("/api/products/{product_id}/target")
 def set_target(product_id: int, payload: ProductUpdate):
-    product = agent.update_target(product_id, payload.target_price)
+    product = agent.update_target(
+        product_id,
+        payload.target_price,
+    )
 
     if not product:
         raise HTTPException(
@@ -149,8 +168,16 @@ def remove_product(product_id: int):
 @app.post("/api/products/{product_id}/insights")
 def product_insights(product_id: int):
     try:
-        return {"summary": summarize_product(product_id)}
+        return {
+            "summary": summarize_product(product_id)
+        }
     except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=404,
+            detail=str(exc),
+        ) from exc
     except Exception as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=503,
+            detail=str(exc),
+        ) from exc
